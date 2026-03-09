@@ -37,8 +37,7 @@ export default function App() {
   // 独立行列表，支持增删排序
   const [rows, setRows] = useState<EditableRow[]>([]);
   const [exporting, setExporting] = useState(false);
-  // 手机端导出预览图（null = 不显示弹窗）
-  const [previewImg, setPreviewImg] = useState<string | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null); // 预览弹窗 dataURL
   const resultsRef = useRef<HTMLDivElement>(null);
   const progressTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const progressRef = useRef(0);
@@ -99,8 +98,6 @@ export default function App() {
       setLoading(false);
     }
   };
-
-  // ---------- 行操作 ----------
   const updateRow = useCallback((id: string, field: keyof Omit<EditableRow, 'id'>, value: string) => {
     setRows((prev) => prev.map((r) => r.id === id ? { ...r, [field]: value } : r));
   }, []);
@@ -149,19 +146,34 @@ export default function App() {
   const saveAsImage = async () => {
     if (!resultsRef.current) return;
     setExporting(true);
-    // 短暂等待 exporting 状态渲染（隐藏悬停样式等）
     await new Promise((r) => setTimeout(r, 80));
     try {
+      // 等待所有图片加载完毕
+      const imgs = Array.from(resultsRef.current.querySelectorAll('img')) as HTMLImageElement[];
+      await Promise.all(
+        imgs.map((img) =>
+          img.complete
+            ? Promise.resolve()
+            : new Promise<void>((res) => {
+                img.onload = () => res();
+                img.onerror = () => res();
+              })
+        )
+      );
+      await new Promise((r) => requestAnimationFrame(r));
+      await new Promise((r) => requestAnimationFrame(r));
+
       const dataUrl = await toPng(resultsRef.current, {
         cacheBust: true,
         pixelRatio: 2,
         backgroundColor: '#ffffff',
+        skipAutoScale: false,
       });
-      // 手机端：弹出预览，让用户长按保存到相册
-      // 桌面端：直接下载文件
+
+      // 判断是否为移动端：移动端显示预览弹窗让用户长按保存
       const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
       if (isMobile) {
-        setPreviewImg(dataUrl);
+        setPreviewUrl(dataUrl);
       } else {
         const link = document.createElement('a');
         link.download = 'workout-plan.png';
@@ -196,36 +208,34 @@ export default function App() {
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-emerald-100">
       <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
 
-      {/* 手机端导出预览弹窗 */}
+      {/* 移动端图片预览弹窗 */}
       <AnimatePresence>
-        {previewImg && (
+        {previewUrl && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-[100] bg-black/80 flex flex-col items-center justify-start overflow-y-auto p-4"
-            onClick={() => setPreviewImg(null)}
-          >
-            <div className="w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
+            onClick={(e) => { if (e.target === e.currentTarget) setPreviewUrl(null); }}>
+            <div className="w-full max-w-lg">
               {/* 提示文字 */}
-              <div className="flex items-center justify-between mb-3">
-                <div className="text-white text-sm font-medium">
-                  📥 长按图片 → 保存到相册
-                </div>
-                <button
-                  onClick={() => setPreviewImg(null)}
-                  className="text-white/70 hover:text-white text-xs px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 transition-all">
-                  关闭
-                </button>
+              <div className="text-center mb-4">
+                <p className="text-white font-semibold text-base">📥 长按图片保存至相册</p>
+                <p className="text-white/60 text-sm mt-1">或截图保存</p>
               </div>
-              {/* 图片主体，用户长按此处保存 */}
+              {/* 图片 */}
               <img
-                src={previewImg}
+                src={previewUrl}
                 alt="训练计划"
                 className="w-full rounded-2xl shadow-2xl"
                 style={{ WebkitTouchCallout: 'default' }}
               />
-              <p className="text-center text-white/50 text-xs mt-3">点击空白处关闭</p>
+              {/* 关闭按钮 */}
+              <button
+                onClick={() => setPreviewUrl(null)}
+                className="mt-4 w-full py-3 bg-white/10 hover:bg-white/20 text-white rounded-2xl text-sm font-medium transition-colors">
+                关闭
+              </button>
             </div>
           </motion.div>
         )}
@@ -297,8 +307,22 @@ export default function App() {
           </div>
 
           {errorMsg && (
-            <div className="mt-4 max-w-2xl mx-auto px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm text-center">
-              ⚠️ {errorMsg}
+            <div className="mt-4 max-w-2xl mx-auto px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm">
+              <div className="flex items-start gap-2">
+                <span className="mt-0.5">⚠️</span>
+                <div className="flex-1">
+                  <p>{errorMsg}</p>
+                  {errorMsg.includes('无法解析') && (
+                    <p className="mt-1 text-red-400 text-xs">提示：请确认视频有语音/字幕，且链接可正常打开</p>
+                  )}
+                </div>
+                <button
+                  onClick={handleExtract}
+                  disabled={loading}
+                  className="shrink-0 px-3 py-1 bg-red-100 hover:bg-red-200 text-red-600 rounded-lg text-xs font-medium transition-colors">
+                  重试
+                </button>
+              </div>
             </div>
           )}
         </section>
