@@ -1,0 +1,9 @@
+@import "tailwindcss";
+
+/* contentEditable 占位符 */
+[contenteditable][data-placeholder]:empty::before {
+  content: attr(data-placeholder);
+  color: #cbd5e1; /* slate-300 */
+  pointer-events: none;
+  font-style: italic;
+}

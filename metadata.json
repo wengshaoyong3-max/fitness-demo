@@ -1,0 +1,5 @@
+{
+  "name": "FitExtract",
+  "description": "AI-powered fitness video analysis and workout extraction tool.",
+  "requestFramePermissions": ["microphone"]
+}
